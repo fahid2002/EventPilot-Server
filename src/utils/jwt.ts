@@ -4,6 +4,7 @@ import type { IUser } from "../models/User";
 export function signToken(user: IUser) {
   const secret = process.env.JWT_SECRET;
   if (!secret) throw new Error("JWT_SECRET is missing");
+  const expiresIn = (process.env.JWT_EXPIRES_IN || "7d") as jwt.SignOptions["expiresIn"];
 
   return jwt.sign(
     {
@@ -13,6 +14,6 @@ export function signToken(user: IUser) {
       isDemo: user.isDemo
     },
     secret,
-    { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
+    { expiresIn }
   );
 }

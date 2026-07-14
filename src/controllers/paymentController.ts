@@ -79,3 +79,47 @@ export async function demoUpgrade(req: Request, res: Response, next: NextFunctio
     next(error);
   }
 }
+
+export async function handleStripeWebhook(req: Request, res: Response, next: NextFunction) {
+  try {
+    const secret = process.env.STRIPE_SECRET_KEY;
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    const signature = req.headers["stripe-signature"];
+
+    if (!secret || !webhookSecret) throw new AppError("Stripe webhook is not configured.", 500);
+    if (!signature || Array.isArray(signature)) throw new AppError("Stripe signature is missing.", 400);
+    if (!Buffer.isBuffer(req.body)) throw new AppError("Stripe webhook body must be raw.", 400);
+
+    const stripe = new Stripe(secret);
+    const event = stripe.webhooks.constructEvent(req.body, signature, webhookSecret);
+
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const userId = session.metadata?.userId;
+      const eventId = session.metadata?.eventId;
+
+      if (userId && eventId && Types.ObjectId.isValid(userId) && Types.ObjectId.isValid(eventId)) {
+        const userObjectId = new Types.ObjectId(userId);
+        const eventObjectId = new Types.ObjectId(eventId);
+
+        await Promise.all([
+          User.findByIdAndUpdate(userObjectId, { membership: "premium" }),
+          Payment.findOneAndUpdate(
+            { stripeSessionId: session.id },
+            { status: "paid" },
+            { new: true }
+          ),
+          Attendance.updateOne(
+            { userId: userObjectId, eventId: eventObjectId },
+            { userId: userObjectId, eventId: eventObjectId, status: "confirmed" },
+            { upsert: true }
+          )
+        ]);
+      }
+    }
+
+    res.json({ received: true });
+  } catch (error) {
+    next(error);
+  }
+}
