@@ -5,6 +5,8 @@ import { Event } from "../models/Event";
 import { SavedEvent } from "../models/SavedEvent";
 import { Attendance } from "../models/Attendance";
 import { Review } from "../models/Review";
+import { Payment } from "../models/Payment";
+import { User } from "../models/User";
 import { AppError } from "../middleware/error";
 
 function objectId(id: string) {
@@ -26,16 +28,46 @@ export async function dashboard(req: Request, res: Response, next: NextFunction)
     const attending = attendingDocs.map((doc: any) => doc.eventId).filter(Boolean);
     const recommended = await Event.find({ status: "approved" }).sort({ rating: -1 }).limit(3);
 
+    const summary: Record<string, number> = {
+      savedCount: saved.length,
+      attendingCount: attending.length,
+      reviewCount,
+      recommendationCount: recommended.length
+    };
+
+    if (req.user?.role === "organizer") {
+      const myEvents = await Event.find({ organizerId: userId }).select("_id");
+      const eventIds = myEvents.map((event) => event._id);
+      const [attendees, revenueResult] = await Promise.all([
+        Attendance.countDocuments({ eventId: { $in: eventIds }, status: "confirmed" }),
+        Payment.aggregate([
+          { $match: { eventId: { $in: eventIds }, status: "paid" } },
+          { $group: { _id: null, total: { $sum: "$amount" } } }
+        ])
+      ]);
+      summary.myEvents = myEvents.length;
+      summary.attendees = attendees;
+      summary.revenue = revenueResult[0]?.total || 0;
+    }
+
+    if (req.user?.role === "admin") {
+      const [totalUsers, totalEvents, pendingEvents, reports] = await Promise.all([
+        User.countDocuments(),
+        Event.countDocuments(),
+        Event.countDocuments({ status: "pending" }),
+        Review.countDocuments()
+      ]);
+      summary.totalUsers = totalUsers;
+      summary.totalEvents = totalEvents;
+      summary.pendingEvents = pendingEvents;
+      summary.reports = reports;
+    }
+
     res.json({
       success: true,
       message: "Dashboard loaded.",
       data: {
-        summary: {
-          savedCount: saved.length,
-          attendingCount: attending.length,
-          reviewCount,
-          recommendationCount: recommended.length
-        },
+        summary,
         saved,
         attending,
         recommended

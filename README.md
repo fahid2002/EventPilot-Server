@@ -58,6 +58,13 @@ npm run dev
 - Admin is seeded from `ADMIN_EMAIL` and `ADMIN_PASSWORD`; admin does not register through the public registration page.
 - Admin cannot use Google login.
 
+## Event Management
+
+- `GET /api/events/manage/list` returns manageable event records for organizer/admin dashboards.
+- Organizers only receive their own events; admins receive all events.
+- `POST /api/events` accepts an optional image URL and stores a default event image when none is provided.
+- Existing MongoDB event gallery arrays were repaired non-destructively so details pages can show multiple images.
+
 ## Deployment Notes
 
 Render can use `render.yaml`. Set the same production env keys in the Render dashboard. After the server is live, create a Stripe webhook endpoint pointing to:
@@ -80,5 +87,8 @@ Health check:
 - Added Stripe webhook handling for successful Checkout sessions.
 - Moved seeded admin, demo, and seed user credentials to env variables.
 - Added role-aware login/registration for users and organizers.
+- Added organizer/admin event management listing for `/items/manage`.
+- Dashboard counts now come from MongoDB activity, event, user, payment, and review records.
+- Event creation now supports optional image URLs and stores a gallery fallback.
 - Stopped Google login from auto-registering unknown emails.
 - Updated JWT signing types for production TypeScript builds.

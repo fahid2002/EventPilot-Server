@@ -4,6 +4,8 @@ import { Event } from "../models/Event";
 import { User } from "../models/User";
 import { AppError } from "../middleware/error";
 
+const defaultEventImage = "https://images.unsplash.com/photo-1515187029135-18ee286d815b?q=80&w=1200&auto=format&fit=crop";
+
 const eventSchema = z.object({
   title: z.string().min(3),
   shortDescription: z.string().min(10),
@@ -13,7 +15,7 @@ const eventSchema = z.object({
   date: z.string().min(4),
   price: z.number().min(0),
   accessType: z.enum(["free", "premium"]),
-  imageUrl: z.string().url(),
+  imageUrl: z.string().url().optional(),
   gallery: z.array(z.string()).optional(),
   capacity: z.number().min(1).optional(),
   tags: z.array(z.string()).optional()
@@ -57,16 +59,28 @@ export async function getEvent(req: Request, res: Response, next: NextFunction) 
   }
 }
 
+export async function manageEvents(req: Request, res: Response, next: NextFunction) {
+  try {
+    const filter = req.user?.role === "admin" ? {} : { organizerId: req.user?.id };
+    const events = await Event.find(filter).sort({ createdAt: -1 });
+    res.json({ success: true, message: "Manage events loaded.", data: { events } });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function createEvent(req: Request, res: Response, next: NextFunction) {
   try {
     const body = eventSchema.parse(req.body);
     const organizer = await User.findById(req.user?.id);
     if (!organizer) throw new AppError("Organizer not found.", 404);
+    const imageUrl = body.imageUrl || defaultEventImage;
 
     const event = await Event.create({
       ...body,
+      imageUrl,
       date: new Date(body.date),
-      gallery: body.gallery?.length ? body.gallery : [body.imageUrl],
+      gallery: body.gallery?.length ? body.gallery : [imageUrl],
       status: req.user?.role === "admin" ? "approved" : "pending",
       organizerId: organizer._id,
       organizerName: organizer.name
