@@ -49,11 +49,14 @@ npm run dev
 
 ## Auth Rules
 
-- New registration always creates a normal `user` account.
-- Google login also creates or links a normal `user` account.
+- New registration creates either a `user` or `organizer` account based on the selected role.
+- Email and role are unique together, so the same email can have separate `user` and `organizer` accounts.
+- Login requires the same role that was used during registration.
+- Google login does not create new accounts. If the selected role/email is not registered, the API returns a register-first message.
+- Google registration creates either a `user` or `organizer` account based on the selected role.
 - Demo login is only a normal user account and is blocked from data-changing actions.
-- Organizer accounts are not seeded. A user must register first, then an admin can promote the account to `organizer`.
 - Admin is seeded from `ADMIN_EMAIL` and `ADMIN_PASSWORD`; admin does not register through the public registration page.
+- Admin cannot use Google login.
 
 ## Deployment Notes
 
@@ -76,5 +79,6 @@ Health check:
 - Added `/api/health` for Render health checks.
 - Added Stripe webhook handling for successful Checkout sessions.
 - Moved seeded admin, demo, and seed user credentials to env variables.
-- Removed seeded organizer login so organizers must register first and be promoted by admin.
+- Added role-aware login/registration for users and organizers.
+- Stopped Google login from auto-registering unknown emails.
 - Updated JWT signing types for production TypeScript builds.

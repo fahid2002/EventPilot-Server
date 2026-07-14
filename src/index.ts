@@ -9,6 +9,7 @@ import { paymentRoutes } from "./routes/paymentRoutes";
 import { adminRoutes } from "./routes/adminRoutes";
 import { handleStripeWebhook } from "./controllers/paymentController";
 import { errorHandler, notFound } from "./middleware/error";
+import { User } from "./models/User";
 
 const app = express();
 const port = Number(process.env.PORT || 5000);
@@ -35,6 +36,9 @@ app.use(notFound);
 app.use(errorHandler);
 
 connectDB()
+  .then(() => {
+    return User.syncIndexes();
+  })
   .then(() => {
     app.listen(port, () => console.log(`EventPilot API listening on port ${port}`));
   })

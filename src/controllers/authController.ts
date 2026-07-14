@@ -2,20 +2,29 @@ import type { Request, Response, NextFunction } from "express";
 import bcrypt from "bcryptjs";
 import { OAuth2Client } from "google-auth-library";
 import { z } from "zod";
-import { User } from "../models/User";
+import { User, type Role } from "../models/User";
 import { AppError } from "../middleware/error";
 import { signToken } from "../utils/jwt";
+
+const publicRoles = ["user", "organizer"] as const;
 
 const registerSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
   password: z.string().min(6),
-  photoUrl: z.string().optional()
+  photoUrl: z.string().optional(),
+  role: z.enum(publicRoles)
 });
 
 const loginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(1)
+  password: z.string().min(1),
+  role: z.enum(["user", "organizer", "admin"])
+});
+
+const googleSchema = z.object({
+  credential: z.string().min(1),
+  role: z.enum(publicRoles)
 });
 
 function publicUser(user: any) {
@@ -35,8 +44,8 @@ export async function register(req: Request, res: Response, next: NextFunction) 
   try {
     const body = registerSchema.parse(req.body);
     const email = body.email.toLowerCase();
-    const exists = await User.findOne({ email });
-    if (exists) throw new AppError("This email is already registered. Please login instead.", 409);
+    const exists = await User.findOne({ email, role: body.role });
+    if (exists) throw new AppError(`This email is already registered as ${body.role}. Please login instead.`, 409);
 
     const password = await bcrypt.hash(body.password, 12);
     const user = await User.create({
@@ -44,8 +53,8 @@ export async function register(req: Request, res: Response, next: NextFunction) 
       email,
       password,
       photoUrl: body.photoUrl || "",
-      role: "user",
-      membership: "free"
+      role: body.role,
+      membership: body.role === "organizer" ? "premium" : "free"
     });
 
     const token = signToken(user);
@@ -58,8 +67,8 @@ export async function register(req: Request, res: Response, next: NextFunction) 
 export async function login(req: Request, res: Response, next: NextFunction) {
   try {
     const body = loginSchema.parse(req.body);
-    const user = await User.findOne({ email: body.email.toLowerCase() }).select("+password");
-    if (!user || !user.password) throw new AppError("Invalid email or password.", 401);
+    const user = await User.findOne({ email: body.email.toLowerCase(), role: body.role }).select("+password");
+    if (!user || !user.password) throw new AppError(`No ${body.role} account found for this email, or the password is incorrect.`, 401);
 
     const matched = await bcrypt.compare(body.password, user.password);
     if (!matched) throw new AppError("Invalid email or password.", 401);
@@ -74,26 +83,21 @@ export async function login(req: Request, res: Response, next: NextFunction) {
 
 export async function googleLogin(req: Request, res: Response, next: NextFunction) {
   try {
-    const credential = String(req.body.credential || "");
+    const body = googleSchema.parse(req.body);
     const clientId = process.env.GOOGLE_CLIENT_ID;
     if (!clientId) throw new AppError("Google client ID is not configured on server.", 500);
 
     const client = new OAuth2Client(clientId);
-    const ticket = await client.verifyIdToken({ idToken: credential, audience: clientId });
+    const ticket = await client.verifyIdToken({ idToken: body.credential, audience: clientId });
     const payload = ticket.getPayload();
     if (!payload?.email) throw new AppError("Google did not return an email address.", 401);
 
-    let user = await User.findOne({ email: payload.email.toLowerCase() });
+    const user = await User.findOne({ email: payload.email.toLowerCase(), role: body.role });
     if (!user) {
-      user = await User.create({
-        name: payload.name || "EventPilot User",
-        email: payload.email.toLowerCase(),
-        googleId: payload.sub,
-        photoUrl: payload.picture || "",
-        role: "user",
-        membership: "free"
-      });
-    } else if (!user.googleId) {
+      throw new AppError(`This email is not registered as ${body.role}. Please register first.`, 404);
+    }
+    if (user.role === "admin") throw new AppError("Admin cannot login with Google. Use email and password.", 403);
+    if (!user.googleId) {
       user.googleId = payload.sub;
       if (!user.photoUrl && payload.picture) user.photoUrl = payload.picture;
       await user.save();
@@ -101,6 +105,37 @@ export async function googleLogin(req: Request, res: Response, next: NextFunctio
 
     const token = signToken(user);
     res.json({ success: true, message: "Google login successful.", data: { user: publicUser(user), token } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function googleRegister(req: Request, res: Response, next: NextFunction) {
+  try {
+    const body = googleSchema.parse(req.body);
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    if (!clientId) throw new AppError("Google client ID is not configured on server.", 500);
+
+    const client = new OAuth2Client(clientId);
+    const ticket = await client.verifyIdToken({ idToken: body.credential, audience: clientId });
+    const payload = ticket.getPayload();
+    if (!payload?.email) throw new AppError("Google did not return an email address.", 401);
+
+    const email = payload.email.toLowerCase();
+    const exists = await User.findOne({ email, role: body.role });
+    if (exists) throw new AppError(`This email is already registered as ${body.role}. Please login instead.`, 409);
+
+    const user = await User.create({
+      name: payload.name || "EventPilot User",
+      email,
+      googleId: payload.sub,
+      photoUrl: payload.picture || "",
+      role: body.role as Role,
+      membership: body.role === "organizer" ? "premium" : "free"
+    });
+
+    const token = signToken(user);
+    res.status(201).json({ success: true, message: "Google account registered successfully.", data: { user: publicUser(user), token } });
   } catch (error) {
     next(error);
   }

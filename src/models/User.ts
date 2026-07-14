@@ -20,7 +20,7 @@ export interface IUser extends Document {
 
 const userSchema = new Schema<IUser>({
   name: { type: String, required: true, trim: true },
-  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  email: { type: String, required: true, lowercase: true, trim: true },
   password: { type: String, select: false },
   googleId: { type: String },
   photoUrl: { type: String, default: "" },
@@ -29,5 +29,7 @@ const userSchema = new Schema<IUser>({
   isDemo: { type: Boolean, default: false },
   status: { type: String, enum: ["active", "blocked"], default: "active" }
 }, { timestamps: true });
+
+userSchema.index({ email: 1, role: 1 }, { unique: true });
 
 export const User = mongoose.model<IUser>("User", userSchema);
