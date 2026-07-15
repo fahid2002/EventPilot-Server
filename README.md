@@ -66,7 +66,7 @@ src/
     User.ts
     Event.ts
     SavedEvent.ts
-    AttendingEvent.ts
+    Attendance.ts
     Review.ts
     Payment.ts
   routes/
@@ -107,7 +107,7 @@ PORT=5000
 MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/eventpilot?retryWrites=true&w=majority
 
 JWT_SECRET=replace_with_a_long_random_secret
-JWT_EXPIRES_IN=7d
+JWT_EXPIRES_IN=365d
 
 CLIENT_URL=http://localhost:3000
 GOOGLE_CLIENT_ID=your_google_oauth_client_id
@@ -260,7 +260,7 @@ The server uses these MongoDB collections:
 - `users`
 - `events`
 - `savedevents`
-- `attendingevents`
+- `attendances`
 - `reviews`
 - `payments`
 
@@ -333,7 +333,7 @@ NODE_ENV=production
 PORT=5000
 MONGODB_URI=your_mongodb_atlas_uri
 JWT_SECRET=your_long_random_secret
-JWT_EXPIRES_IN=7d
+JWT_EXPIRES_IN=365d
 CLIENT_URL=https://eventpilot-client.vercel.app
 GOOGLE_CLIENT_ID=your_google_oauth_client_id
 STRIPE_SECRET_KEY=sk_live_or_test_key
@@ -348,6 +348,8 @@ DEMO_USER_PASSWORD=your_demo_password
 SEED_USER_EMAIL=seed@example.com
 SEED_USER_PASSWORD=your_seed_password
 ```
+
+Current production environment variables are configured directly in Render. Local `.env` values are for development only and should not be committed.
 
 ## Verification Checklist
 
@@ -367,6 +369,7 @@ Then verify:
 - `GET /api/events/manage/list` works for organizer/admin tokens.
 - Normal user tokens cannot access organizer/admin event management.
 - Demo user cannot save, attend, review, pay, add, manage, or delete.
+- Newly issued production JWTs are valid for 365 days, based on `JWT_EXPIRES_IN=365d`.
 
 ## Security Notes
 
