@@ -20,6 +20,78 @@ function objectId(id: string) {
   return new Types.ObjectId(id);
 }
 
+async function fulfillCheckoutSession(session: Stripe.Checkout.Session) {
+  if (session.payment_status !== "paid") {
+    throw new AppError("Stripe payment is not completed yet.", 400);
+  }
+
+  const userId = session.metadata?.userId;
+  const eventId = session.metadata?.eventId;
+
+  if (
+    !userId ||
+    !eventId ||
+    !Types.ObjectId.isValid(userId) ||
+    !Types.ObjectId.isValid(eventId)
+  ) {
+    throw new AppError("Stripe session metadata is invalid.", 400);
+  }
+
+  const userObjectId = new Types.ObjectId(userId);
+  const eventObjectId = new Types.ObjectId(eventId);
+
+  const [user] = await Promise.all([
+    User.findByIdAndUpdate(
+      userObjectId,
+      {
+        membership: "premium",
+      },
+      {
+        new: true,
+      }
+    ),
+
+    Payment.findOneAndUpdate(
+      {
+        stripeSessionId: session.id,
+      },
+      {
+        userId: userObjectId,
+        eventId: eventObjectId,
+        amount: 999,
+        provider: "stripe",
+        status: "paid",
+        stripeSessionId: session.id,
+      },
+      {
+        new: true,
+        upsert: true,
+      }
+    ),
+
+    Attendance.updateOne(
+      {
+        userId: userObjectId,
+        eventId: eventObjectId,
+      },
+      {
+        userId: userObjectId,
+        eventId: eventObjectId,
+        status: "confirmed",
+      },
+      {
+        upsert: true,
+      }
+    ),
+  ]);
+
+  if (!user) {
+    throw new AppError("User not found for completed payment.", 404);
+  }
+
+  return user;
+}
+
 // Creates a Stripe Checkout session for premium membership
 export async function createCheckout(
   req: Request,
@@ -46,6 +118,12 @@ export async function createCheckout(
     }
 
     const stripe = new Stripe(secret);
+    const configuredSuccessUrl =
+      process.env.STRIPE_SUCCESS_URL ||
+      `${process.env.CLIENT_URL}/dashboard?payment=success`;
+    const successUrl = configuredSuccessUrl.includes("{CHECKOUT_SESSION_ID}")
+      ? configuredSuccessUrl
+      : `${configuredSuccessUrl}${configuredSuccessUrl.includes("?") ? "&" : "?"}session_id={CHECKOUT_SESSION_ID}`;
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
@@ -65,9 +143,7 @@ export async function createCheckout(
         purpose: "premium_membership",
       },
 
-      success_url:
-        process.env.STRIPE_SUCCESS_URL ||
-        `${process.env.CLIENT_URL}/dashboard?payment=success`,
+      success_url: successUrl,
 
       cancel_url:
         process.env.STRIPE_CANCEL_URL ||
@@ -89,6 +165,50 @@ export async function createCheckout(
       message: "Stripe Checkout session created.",
       data: {
         url: session.url,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function confirmCheckout(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const secret = process.env.STRIPE_SECRET_KEY;
+
+    if (!secret) {
+      throw new AppError("Stripe is not configured.", 500);
+    }
+
+    const stripe = new Stripe(secret);
+    const session = await stripe.checkout.sessions.retrieve(
+      req.params.sessionId
+    );
+
+    if (session.metadata?.userId !== req.user!.id) {
+      throw new AppError("This payment session does not belong to the logged-in user.", 403);
+    }
+
+    const user = await fulfillCheckoutSession(session);
+
+    res.json({
+      success: true,
+      message: "Premium membership activated.",
+      data: {
+        user: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          membership: user.membership,
+          photoUrl: user.photoUrl,
+          isDemo: user.isDemo,
+          status: user.status,
+        },
       },
     });
   } catch (error) {
@@ -219,54 +339,7 @@ export async function handleStripeWebhook(
       const session =
         event.data.object as Stripe.Checkout.Session;
 
-      const userId = session.metadata?.userId;
-      const eventId = session.metadata?.eventId;
-
-      if (
-        userId &&
-        eventId &&
-        Types.ObjectId.isValid(userId) &&
-        Types.ObjectId.isValid(eventId)
-      ) {
-        const userObjectId = new Types.ObjectId(userId);
-        const eventObjectId = new Types.ObjectId(eventId);
-
-        await Promise.all([
-          User.findByIdAndUpdate(
-            userObjectId,
-            {
-              membership: "premium",
-            }
-          ),
-
-          Payment.findOneAndUpdate(
-            {
-              stripeSessionId: session.id,
-            },
-            {
-              status: "paid",
-            },
-            {
-              new: true,
-            }
-          ),
-
-          Attendance.updateOne(
-            {
-              userId: userObjectId,
-              eventId: eventObjectId,
-            },
-            {
-              userId: userObjectId,
-              eventId: eventObjectId,
-              status: "confirmed",
-            },
-            {
-              upsert: true,
-            }
-          ),
-        ]);
-      }
+      await fulfillCheckoutSession(session);
     }
 
     res.json({

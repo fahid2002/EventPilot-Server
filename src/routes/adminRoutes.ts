@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { listUsers, pendingEvents, updateEventStatus, updateUserRole } from "../controllers/adminController";
+import { deleteUser, listUsers, pendingEvents, updateEventStatus, updateUserRole } from "../controllers/adminController";
 import { blockDemoMutations, requireAuth, requireRole } from "../middleware/auth";
 
 export const adminRoutes = Router();
@@ -9,3 +9,4 @@ adminRoutes.get("/events/pending", pendingEvents);
 adminRoutes.patch("/events/:id/status", updateEventStatus);
 adminRoutes.get("/users", listUsers);
 adminRoutes.patch("/users/:id/role", updateUserRole);
+adminRoutes.delete("/users/:id", deleteUser);
