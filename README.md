@@ -376,3 +376,9 @@ Then verify:
 - Use a long random `JWT_SECRET` in production.
 - Keep MongoDB Atlas network access as restrictive as possible for production needs.
 - Use Stripe test keys for demos unless the project is ready for real billing.
+
+## Credits
+
+Developed by **Fahid Hasan**.
+
+Built as a full-stack TypeScript project using Next.js, Express.js, MongoDB, JWT authentication, role-based authorization, Google login, Stripe payment integration, and responsive Tailwind CSS UI.
